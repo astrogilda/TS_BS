@@ -75,12 +75,13 @@ X = np.arange(n_samples)
 n_bootstraps = 3
 block_length = 3
 rng = 42
-mbb = MovingBlockBootstrap(n_bootstraps=n_bootstraps, rng=rng, block_length=block_length)
+mbb = MovingBlockBootstrap(
+    n_bootstraps=n_bootstraps, rng=rng, block_length=block_length
+)
 
 # Generate bootstrapped samples
 return_indices = False
-bootstrapped_samples = mbb.bootstrap(
-    X, return_indices=return_indices)
+bootstrapped_samples = mbb.bootstrap(X, return_indices=return_indices)
 
 # Collect bootstrap samples
 X_bootstrapped = []
@@ -213,6 +214,13 @@ pip install -e ".[dev]"
 
 The editable install ensures that changes to the package are reflected in
 your environment.
+
+5. Set up pre-commit:
+This project uses pre-commit to ensure code quality and consistency.  Install and set up pre-commit by running:
+```
+pip install pre-commit
+pre-commit install
+```
 
 ### Verifying the Installation
 
