@@ -299,6 +299,10 @@ class BlockGenerator(BaseModel):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+        # Pass BlockGenerator's RNG to BlockLengthSampler
+        self.block_length_sampler.rng = self.rng
+        logger.debug("Assigned BlockGenerator's RNG to BlockLengthSampler.")
+
         logger.debug("All inter-field consistency checks passed.")
         return self
 
@@ -551,12 +555,15 @@ class BlockGenerator(BaseModel):
         logger.info("Generating overlapping blocks.")
         block_indices = []
         start_index = self._calculate_start_index()
-        total_length_covered = 0
         start_indices = set()
+        iterations = 0
+        max_iterations = 1000  # Prevent infinite loops
 
-        while total_length_covered < self.input_length:  # type: ignore
+        while iterations < max_iterations:
+            iterations += 1
+
             if start_index in start_indices:
-                # Detect repeating start index to prevent infinite loops
+                # Detected a repeating start index; terminate to prevent infinite loop
                 warnings.warn(
                     "Detected repeating start index. Terminating block generation to prevent infinite loop.",
                     stacklevel=2,
@@ -567,20 +574,30 @@ class BlockGenerator(BaseModel):
                 break
 
             start_indices.add(start_index)
+
             sampled_block_length = (
                 self.block_length_sampler.sample_block_length()
             )
             logger.debug(f"Sampled block length: {sampled_block_length}.")
 
-            block_length = self._get_next_block_length(
-                sampled_block_length, total_length_covered
-            )
-            logger.debug(f"Adjusted block length: {block_length}.")
-
-            if block_length < self.min_block_length:  # type:ignore
-                # Terminate if the block length is below the minimum required
+            # Adjust block_length to fit within input_length without wrapping
+            if not self.wrap_around_flag and (
+                start_index + sampled_block_length > self.input_length
+            ):
+                block_length = self.input_length - start_index
                 logger.debug(
-                    f"Block length {block_length} is less than minimum {self.min_block_length}. Terminating."
+                    f"Adjusted block length to fit remaining input: {block_length}."
+                )
+            else:
+                block_length = sampled_block_length
+
+            # Ensure block_length meets min_block_length
+            if block_length < self.min_block_length:
+                print(
+                    f"Block length {block_length} is less than min_block_length {self.min_block_length}. Terminating."
+                )
+                logger.debug(
+                    f"Block length {block_length} is less than min_block_length {self.min_block_length}. Terminating."
                 )
                 break
 
@@ -590,31 +607,37 @@ class BlockGenerator(BaseModel):
             block = self._create_block(start_index, block_length)
             logger.debug(f"Generated block: {block}.")
 
+            # Validate that block indices are within range
+            if not self.wrap_around_flag and np.any(
+                block >= self.input_length
+            ):
+                logger.error(
+                    f"Block {block} exceeds input_length {self.input_length}."
+                )
+                raise ValueError(
+                    f"Block indices exceed input_length {self.input_length}."
+                )
+
             block_indices.append(block)
-            total_length_covered += self._get_total_length_covered(
-                block_length, overlap_length
-            )
-            logger.debug(
-                f"Total length covered so far: {total_length_covered}."
-            )
 
-            start_index = self._calculate_next_start_index(
-                start_index, block_length, overlap_length
-            )
+            # Update start_index based on overlap
+            start_index += block_length - overlap_length
+            logger.debug(f"Next start_index: {start_index}.")
 
-        # Prevent exceeding the maximum allowed iterations
-        if total_length_covered >= self.input_length:
-            logger.info("Overlapping block generation completed successfully.")
-        else:
-            warnings.warn(
-                "Maximum iterations reached during block generation. Some input may remain uncovered.",
-                stacklevel=2,
-            )
-            logger.warning(
-                "Maximum iterations reached. Some input may remain uncovered."
-            )
+            # If not wrapping around and start_index exceeds input_length, terminate
+            if not self.wrap_around_flag and start_index >= self.input_length:
+                logger.debug(
+                    "Start index has reached or exceeded input_length. Terminating block generation."
+                )
+                break
 
-        validate_block_indices(block_indices, self.input_length)  # type: ignore
+        # from pprint import pprint
+        # pprint(block_indices)
+        # See if there are any empty lists in block_indices, if so, remove them
+        block_indices = [block for block in block_indices if len(block) > 0]
+        # Final validation to ensure no blocks exceed input_length
+        validate_block_indices(block_indices, self.input_length)
+        logger.info(f"Generated {len(block_indices)} blocks.")
         return block_indices
 
     def generate_blocks(self, overlap_flag: bool = False) -> list[np.ndarray]:

@@ -119,7 +119,9 @@ select = [
     "UP",  # pyupgrade
     "W",  # pycodestyle warnings
     "YTT", # flake8-2020
+    "F541"  # Include F541 for f-string issues
 ]
+
 
 exclude = [
     "migrations",
